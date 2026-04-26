@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Générateur de calendrier de stream Twitch pour Le Général Jus."
+    />
+    <title>Le Général Jus — Planning des streams</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=Orbitron:wght@700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+    <script
+      defer
+      src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
+    ></script>
+    <script defer src="script.js"></script>
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+
+    <main class="workspace">
+      <section class="studio-card" aria-label="Configuration du planning">
+        <header class="topbar">
+          <a class="brand" href="#configuration" aria-label="Retour à la configuration">
+            <span class="brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="img">
+                <path d="M11.571 4.714h1.715v5.143H11.57V4.714Zm4.715 0H18v5.143h-1.714V4.714ZM6 0 1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0H6Zm14.571 11.143-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714v9.429Z" />
+              </svg>
+            </span>
+            <span>
+              <strong>Le Général Jus</strong>
+              <small>Planning des streams</small>
+            </span>
+          </a>
+
+          <nav class="topnav" aria-label="Navigation">
+            <a class="topnav-link is-active" href="#configuration">
+              <span aria-hidden="true">▣</span>
+              Calendrier
+            </a>
+            <a class="topnav-link" href="#apercu">
+              <span aria-hidden="true">♟</span>
+              Aperçu
+            </a>
+            <button class="topnav-link topnav-button" type="button" id="exportNavBtn">
+              <span aria-hidden="true">↗</span>
+              Exporter
+            </button>
+          </nav>
+
+          <button
+            class="icon-button"
+            type="button"
+            id="focusPreviewBtn"
+            aria-label="Mettre l'aperçu en avant"
+            title="Mettre l'aperçu en avant"
+          >
+            <span aria-hidden="true">☼</span>
+          </button>
+
+          <button class="primary-action" type="button" id="generateImageBtn">
+            Générer l'image
+          </button>
+        </header>
+
+        <div class="studio-body" id="configuration">
+          <div class="section-heading">
+            <h1>Configurer votre planning</h1>
+            <p>Ajoutez vos sessions de stream pour générer votre calendrier.</p>
+          </div>
+
+          <div class="config-grid">
+            <div class="left-stack">
+              <aside class="panel form-panel" aria-label="Formulaire de session">
+                <div class="panel-title">
+                  <span class="panel-icon" aria-hidden="true">▱</span>
+                  <h2>Ajouter une session</h2>
+                </div>
+
+                <form class="stream-form" id="sessionForm">
+                  <input type="hidden" id="editingId" />
+
+                  <label class="field">
+                    <span>Date</span>
+                    <span class="input-shell">
+                      <span aria-hidden="true">◴</span>
+                      <input type="date" id="dateInput" required />
+                    </span>
+                  </label>
+
+                  <fieldset class="field day-field">
+                    <legend>Jour</legend>
+                    <div class="day-picker" id="dayPicker" role="radiogroup">
+                      <button type="button" class="day-button" role="radio" data-day="Lun">Lun</button>
+                      <button type="button" class="day-button" role="radio" data-day="Mar">Mar</button>
+                      <button type="button" class="day-button" role="radio" data-day="Mer">Mer</button>
+                      <button type="button" class="day-button" role="radio" data-day="Jeu">Jeu</button>
+                      <button type="button" class="day-button is-selected" role="radio" data-day="Ven">Ven</button>
+                      <button type="button" class="day-button" role="radio" data-day="Sam">Sam</button>
+                      <button type="button" class="day-button" role="radio" data-day="Dim">Dim</button>
+                    </div>
+                  </fieldset>
+
+                  <label class="field">
+                    <span>Heure</span>
+                    <span class="input-shell">
+                      <span aria-hidden="true">◷</span>
+                      <input type="time" id="timeInput" required />
+                    </span>
+                  </label>
+
+                  <label class="field">
+                    <span>Jeu / Catégorie</span>
+                    <span class="input-shell">
+                      <span aria-hidden="true">⌁</span>
+                      <input
+                        type="text"
+                        id="gameInput"
+                        required
+                        autocomplete="off"
+                        maxlength="42"
+                      />
+                    </span>
+                  </label>
+
+                  <label class="field">
+                    <span>Titre du stream (optionnel)</span>
+                    <span class="input-shell">
+                      <input
+                        type="text"
+                        id="titleInput"
+                        autocomplete="off"
+                        maxlength="64"
+                      />
+                    </span>
+                  </label>
+
+                  <div class="field image-field">
+                    <span>Image du jeu (optionnel)</span>
+                    <button
+                      class="upload-zone"
+                      type="button"
+                      id="imageDropZone"
+                      aria-label="Choisir ou déposer une image de jeu"
+                    >
+                      <span class="upload-preview" id="imageUploadPreview" aria-hidden="true"></span>
+                      <span class="upload-copy">
+                        <strong id="imageUploadLabel">Ajouter une image</strong>
+                        <small id="imageUploadHint">Cliquer ou déposer</small>
+                      </span>
+                    </button>
+                    <input
+                      class="visually-hidden"
+                      type="file"
+                      id="imageInput"
+                      accept="image/png,image/jpeg,image/webp"
+                    />
+                    <button class="ghost-button compact-ghost is-hidden" type="button" id="removeImageBtn">
+                      Retirer l'image
+                    </button>
+                  </div>
+
+                  <div class="form-actions">
+                    <button class="submit-button" type="submit" id="submitSessionBtn">
+                      <span>Ajouter la session</span>
+                      <span aria-hidden="true">＋</span>
+                    </button>
+                    <button class="ghost-button is-hidden" type="button" id="cancelEditBtn">
+                      Annuler la modification
+                    </button>
+                  </div>
+                </form>
+              </aside>
+
+              <section class="panel options-panel" aria-label="Options du calendrier">
+                <h2>Options</h2>
+                <label class="option-row">
+                  <span>Couleur principale</span>
+                  <input type="color" id="accentColorInput" value="#8d2cff" />
+                </label>
+                <label class="option-row">
+                  <span>Thème</span>
+                  <select id="themeSelect">
+                    <option value="twitch" selected>Twitch Purple</option>
+                    <option value="void">Void Neon</option>
+                    <option value="royal">Royal Glow</option>
+                  </select>
+                </label>
+                <label class="option-row">
+                  <span>Inclure le fuseau horaire</span>
+                  <input type="checkbox" id="timezoneToggle" checked />
+                </label>
+              </section>
+            </div>
+
+            <section class="panel sessions-panel" aria-label="Sessions programmées">
+              <div class="panel-title">
+                <span class="panel-icon" aria-hidden="true">▣</span>
+                <h2>Sessions programmées <span id="sessionCount">(0)</span></h2>
+              </div>
+
+              <div class="session-list" id="sessionList" aria-live="polite"></div>
+
+              <p class="hint">
+                Glissez ou utilisez ↑↓ pour réorganiser • Cliquez sur modifier ou supprimer
+              </p>
+            </section>
+          </div>
+
+          <footer class="footer">© Le Général Jus — Tous droits réservés</footer>
+        </div>
+      </section>
+
+      <aside class="preview-column" id="apercu" aria-label="Aperçu du calendrier final">
+        <div class="preview-toolbar">
+          <div>
+            <span>Aperçu live</span>
+            <strong>Aperçu affiche • Export PNG 1920x1080</strong>
+          </div>
+          <button class="secondary-action" type="button" id="generateImageSideBtn">
+            Générer l'image
+          </button>
+        </div>
+
+        <section class="calendar-art" id="calendarPreview" aria-label="Calendrier généré">
+          <div class="calendar-glow"></div>
+          <header class="calendar-header">
+            <span class="calendar-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" role="img">
+                <path d="M11.571 4.714h1.715v5.143H11.57V4.714Zm4.715 0H18v5.143h-1.714V4.714ZM6 0 1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0H6Zm14.571 11.143-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714v9.429Z" />
+              </svg>
+            </span>
+            <h2>Le Général Jus</h2>
+          </header>
+
+          <div class="calendar-title">
+            <span>Planning des</span>
+            <strong>streams</strong>
+          </div>
+
+          <div class="calendar-streams" id="previewList"></div>
+        </section>
+      </aside>
+    </main>
+  </body>
+</html>
