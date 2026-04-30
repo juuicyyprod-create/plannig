@@ -15,11 +15,11 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="style.css" />
+    <script defer src="script.js"></script>
     <script
-      defer
+      async
       src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
     ></script>
-    <script defer src="script.js"></script>
   </head>
   <body>
     <div class="ambient ambient-one"></div>
@@ -201,9 +201,19 @@
             </div>
 
             <section class="panel sessions-panel" aria-label="Sessions programmées">
-              <div class="panel-title">
-                <span class="panel-icon" aria-hidden="true">▣</span>
-                <h2>Sessions programmées <span id="sessionCount">(0)</span></h2>
+              <div class="panel-title sessions-titlebar">
+                <div class="panel-heading-inline">
+                  <span class="panel-icon" aria-hidden="true">▣</span>
+                  <h2>Sessions programmées <span id="sessionCount">(0)</span></h2>
+                </div>
+                <div class="panel-actions">
+                  <button class="ghost-button compact-ghost" type="button" id="sortSessionsBtn">
+                    Trier
+                  </button>
+                  <button class="ghost-button compact-ghost danger-ghost" type="button" id="clearSessionsBtn">
+                    Vider
+                  </button>
+                </div>
               </div>
 
               <div class="session-list" id="sessionList" aria-live="polite"></div>
