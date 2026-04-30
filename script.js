@@ -1,7 +1,10 @@
 const STORAGE_KEY = "general-jus-stream-sessions";
 const SETTINGS_KEY = "general-jus-calendar-settings";
-const MAX_IMAGE_SIZE = 900;
-const IMAGE_QUALITY = 0.82;
+const EXPORT_WIDTH = 1920;
+const EXPORT_HEIGHT = 1080;
+const MAX_IMAGE_SIZE = 1180;
+const MAX_IMAGE_DATA_LENGTH = 560000;
+const IMAGE_QUALITY = 0.86;
 
 const dayOptions = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 const dayLabels = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
@@ -10,6 +13,13 @@ const themeAccents = {
   void: "#b026ff",
   royal: "#6f35ff",
 };
+const layoutProfiles = [
+  { max: 3, density: "roomy", layout: "single", columns: 1 },
+  { max: 5, density: "normal", layout: "single", columns: 1 },
+  { max: 7, density: "compact", layout: "single", columns: 1 },
+  { max: 10, density: "dense", layout: "grid", columns: 2 },
+  { max: Infinity, density: "ultra", layout: "grid", columns: 2 },
+];
 
 const elements = {
   form: document.querySelector("#sessionForm"),
@@ -28,6 +38,8 @@ const elements = {
   removeImage: document.querySelector("#removeImageBtn"),
   submit: document.querySelector("#submitSessionBtn"),
   cancelEdit: document.querySelector("#cancelEditBtn"),
+  sortSessions: document.querySelector("#sortSessionsBtn"),
+  clearSessions: document.querySelector("#clearSessionsBtn"),
   sessionList: document.querySelector("#sessionList"),
   sessionCount: document.querySelector("#sessionCount"),
   preview: document.querySelector("#calendarPreview"),
@@ -64,6 +76,8 @@ function init() {
 function bindEvents() {
   elements.form.addEventListener("submit", handleFormSubmit);
   elements.cancelEdit.addEventListener("click", resetEditingState);
+  elements.sortSessions?.addEventListener("click", sortSessionsByDate);
+  elements.clearSessions?.addEventListener("click", clearSessions);
 
   elements.date.addEventListener("change", () => {
     if (!elements.date.value) return;
@@ -89,6 +103,7 @@ function bindEvents() {
   elements.sessionList.addEventListener("dragover", handleDragOver);
   elements.sessionList.addEventListener("drop", handleDrop);
   elements.sessionList.addEventListener("dragend", handleDragEnd);
+  elements.sessionList.addEventListener("keydown", handleSessionKeyboard);
 
   elements.imageDropZone.addEventListener("click", () => elements.imageInput.click());
   elements.imageDropZone.addEventListener("keydown", (event) => {
@@ -213,6 +228,44 @@ function handleSessionAction(event) {
   }
 }
 
+function handleSessionKeyboard(event) {
+  if (event.target.closest("button, input, select, textarea")) return;
+  const card = event.target.closest(".session-card");
+  if (!card) return;
+
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    moveSession(card.dataset.id, -1);
+  }
+
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    moveSession(card.dataset.id, 1);
+  }
+}
+
+function sortSessionsByDate() {
+  if (sessions.length < 2) return;
+
+  sessions = [...sessions].sort(compareSessionsByDate);
+  saveSessions();
+  render();
+  showToast("Sessions triées par date.");
+}
+
+function clearSessions() {
+  if (!sessions.length) return;
+
+  const shouldClear = window.confirm("Supprimer toutes les sessions du planning ?");
+  if (!shouldClear) return;
+
+  sessions = [];
+  resetEditingState();
+  saveSessions();
+  render();
+  showToast("Planning vidé.");
+}
+
 function startEditing(session) {
   elements.editingId.value = session.id;
   elements.date.value = session.date;
@@ -267,7 +320,8 @@ function getFormPayload() {
     return null;
   }
 
-  if (!isValidDayValue(selectedDay)) {
+  const dateDay = getDayFromDate(date);
+  if (!isValidDayValue(dateDay)) {
     showToast("Choisissez un jour valide.");
     elements.dayButtons[0]?.focus();
     return null;
@@ -285,9 +339,11 @@ function getFormPayload() {
     return null;
   }
 
+  selectDay(dateDay);
+
   return {
     date,
-    day: selectedDay,
+    day: dateDay,
     time,
     game,
     title,
@@ -414,6 +470,8 @@ function render() {
 
 function renderSessionList() {
   elements.sessionCount.textContent = `(${sessions.length})`;
+  if (elements.sortSessions) elements.sortSessions.disabled = sessions.length < 2;
+  if (elements.clearSessions) elements.clearSessions.disabled = sessions.length < 1;
 
   if (!sessions.length) {
     elements.sessionList.innerHTML = `
@@ -434,7 +492,7 @@ function renderSessionCard(session, index) {
   const isLast = index === sessions.length - 1;
 
   return `
-    <article class="session-card" draggable="true" data-id="${escapeHtml(session.id)}">
+    <article class="session-card" draggable="true" tabindex="0" data-id="${escapeHtml(session.id)}">
       <span class="drag-handle" aria-hidden="true">⁝⁝</span>
       ${renderGameVisual(session)}
       <div>
@@ -455,9 +513,7 @@ function renderSessionCard(session, index) {
 }
 
 function renderPreview() {
-  const density = getDensity(sessions.length);
-  elements.preview.dataset.density = density;
-  elements.previewList.style.setProperty("--session-count", String(Math.max(sessions.length, 1)));
+  applyPreviewLayout(elements.preview, sessions.length);
 
   if (!sessions.length) {
     elements.previewList.innerHTML = `
@@ -475,9 +531,10 @@ function renderPreviewSession(session) {
   const dateParts = getDateParts(session.date);
   const subtitle = session.title || "";
   const timezone = elements.timezone.checked ? "<small>Heure du Québec</small>" : "";
+  const textClass = getTextLengthClass(session.game, subtitle);
 
   return `
-    <article class="preview-stream">
+    <article class="preview-stream ${textClass}">
       <div class="preview-date">
         <span class="preview-day">${escapeHtml(session.day)}</span>
         <span class="preview-number">${escapeHtml(dateParts.day)}</span>
@@ -485,7 +542,7 @@ function renderPreviewSession(session) {
       </div>
       ${renderGameVisual(session, "preview-visual")}
       <div class="preview-game">
-        <h3>${escapeHtml(session.game)}</h3>
+        <h3 title="${escapeHtml(session.game)}">${escapeHtml(session.game)}</h3>
         ${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : ""}
       </div>
       <div class="preview-hour">
@@ -515,7 +572,7 @@ function renderGameVisual(session, extraClass = "") {
 
   return `
     <span class="${classes}" style="${style}" aria-label="Image du jeu ${escapeHtml(session.game)}">
-      <img src="${escapeHtml(session.image)}" alt="" />
+      <img src="${escapeHtml(session.image)}" alt="" loading="lazy" decoding="async" />
     </span>
   `;
 }
@@ -524,11 +581,6 @@ async function generateImage() {
   if (!sessions.length) {
     showToast("Ajoutez au moins une session avant de générer l'image.");
     elements.game.focus();
-    return;
-  }
-
-  if (!window.html2canvas) {
-    showToast("Le module d'export n'est pas encore chargé. Réessayez dans un instant.");
     return;
   }
 
@@ -543,9 +595,7 @@ async function generateImage() {
   let exportHost = null;
 
   try {
-    if (document.fonts?.ready) {
-      await document.fonts.ready;
-    }
+    await waitForFonts();
 
     exportHost = document.createElement("div");
     const exportNode = elements.preview.cloneNode(true);
@@ -553,28 +603,25 @@ async function generateImage() {
     exportNode.classList.add("export-render");
     exportNode.removeAttribute("id");
     exportNode.querySelectorAll("[id]").forEach((node) => node.removeAttribute("id"));
+    exportNode.querySelectorAll("img[loading]").forEach((image) => image.removeAttribute("loading"));
     exportNode.setAttribute("aria-hidden", "true");
+    applyPreviewLayout(exportNode, sessions.length);
     exportHost.appendChild(exportNode);
     document.body.appendChild(exportHost);
 
     await nextFrame();
-    await waitForImages(exportNode);
+    await withTimeout(waitForImages(exportNode), 1800);
+    fitPreviewText(exportNode);
+    await nextFrame();
 
-    const canvas = await html2canvas(exportNode, {
-      width: 1920,
-      height: 1080,
-      scale: 1,
-      backgroundColor: null,
-      useCORS: true,
-      logging: false,
-      windowWidth: 1920,
-      windowHeight: 1080,
-    });
+    const canvas = window.html2canvas
+      ? await renderWithHtml2Canvas(exportNode)
+      : await renderWithSvgFallback(exportNode);
 
     downloadCanvas(canvas);
-    showToast("Image PNG exportée en 1920x1080.");
+    showToast(`Image PNG exportée en ${EXPORT_WIDTH}x${EXPORT_HEIGHT}.`);
   } catch {
-    showToast("Impossible de générer l'image. Vérifiez le chargement de la page.");
+    showToast("Impossible de générer l'image. Vérifiez les images et réessayez.");
   } finally {
     exportHost?.remove();
     buttons.forEach((button) => {
@@ -586,11 +633,86 @@ async function generateImage() {
   }
 }
 
+function renderWithHtml2Canvas(exportNode) {
+  return html2canvas(exportNode, {
+    width: EXPORT_WIDTH,
+    height: EXPORT_HEIGHT,
+    scale: 1,
+    backgroundColor: null,
+    useCORS: true,
+    logging: false,
+    windowWidth: EXPORT_WIDTH,
+    windowHeight: EXPORT_HEIGHT,
+    scrollX: 0,
+    scrollY: 0,
+  });
+}
+
+function renderWithSvgFallback(exportNode) {
+  return new Promise((resolve, reject) => {
+    const clone = exportNode.cloneNode(true);
+    clone.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
+
+    const html = `
+      <div xmlns="http://www.w3.org/1999/xhtml">
+        <style>${collectInlineStyles()}</style>
+        ${new XMLSerializer().serializeToString(clone)}
+      </div>
+    `;
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="${EXPORT_WIDTH}" height="${EXPORT_HEIGHT}" viewBox="0 0 ${EXPORT_WIDTH} ${EXPORT_HEIGHT}">
+        <foreignObject width="100%" height="100%">${html}</foreignObject>
+      </svg>
+    `;
+    const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const image = new Image();
+
+    image.addEventListener("error", () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Rendu SVG indisponible"));
+    });
+
+    image.addEventListener("load", () => {
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+
+      URL.revokeObjectURL(url);
+
+      if (!context) {
+        reject(new Error("Canvas indisponible"));
+        return;
+      }
+
+      canvas.width = EXPORT_WIDTH;
+      canvas.height = EXPORT_HEIGHT;
+      context.drawImage(image, 0, 0, EXPORT_WIDTH, EXPORT_HEIGHT);
+      resolve(canvas);
+    });
+
+    image.src = url;
+  });
+}
+
+function collectInlineStyles() {
+  return [...document.styleSheets]
+    .map((sheet) => {
+      try {
+        return [...sheet.cssRules].map((rule) => rule.cssText).join("\n");
+      } catch {
+        return "";
+      }
+    })
+    .join("\n");
+}
+
 function downloadCanvas(canvas) {
   const link = document.createElement("a");
   link.download = `planning-le-general-jus-${toInputDate(new Date())}.png`;
   link.href = canvas.toDataURL("image/png");
+  document.body.appendChild(link);
   link.click();
+  link.remove();
 }
 
 function selectDay(day) {
@@ -697,13 +819,13 @@ function normalizeSession(session, index) {
     return null;
   }
 
-  const fallbackDay = getDayFromDate(date) || "Lun";
+  const day = getDayFromDate(date) || "Lun";
   const createdAt = Number.isFinite(session.createdAt) ? session.createdAt : Date.now() + index;
 
   return {
     id: sanitizeText(session.id, 80) || createId(),
     date,
-    day: isValidDayValue(session.day) ? session.day : fallbackDay,
+    day,
     time,
     game,
     title,
@@ -803,10 +925,34 @@ function toInputDate(date) {
   return `${year}-${month}-${day}`;
 }
 
-function getDensity(count) {
-  if (count > 7) return "ultra";
-  if (count > 5) return "compact";
-  return "normal";
+function applyPreviewLayout(root, count) {
+  const profile = getLayoutProfile(count);
+  const sessionCount = Math.max(count, 1);
+  const rows = Math.ceil(sessionCount / profile.columns);
+
+  root.dataset.density = profile.density;
+  root.dataset.layout = profile.layout;
+  root.style.setProperty("--session-count", String(sessionCount));
+  root.style.setProperty("--session-columns", String(profile.columns));
+  root.style.setProperty("--session-rows", String(rows));
+}
+
+function getLayoutProfile(count) {
+  return layoutProfiles.find((profile) => count <= profile.max) || layoutProfiles[layoutProfiles.length - 1];
+}
+
+function getTextLengthClass(game, title) {
+  const length = `${game} ${title}`.trim().length;
+  if (length > 74) return "text-xlong";
+  if (length > 52) return "text-long";
+  if (length > 34) return "text-medium";
+  return "text-short";
+}
+
+function compareSessionsByDate(a, b) {
+  const aKey = `${a.date}T${a.time}`;
+  const bKey = `${b.date}T${b.time}`;
+  return aKey.localeCompare(bKey) || a.createdAt - b.createdAt;
 }
 
 function createId() {
@@ -830,9 +976,6 @@ function compressImage(file) {
 
       image.addEventListener("error", reject);
       image.addEventListener("load", () => {
-        const ratio = Math.min(1, MAX_IMAGE_SIZE / Math.max(image.naturalWidth, image.naturalHeight));
-        const width = Math.max(1, Math.round(image.naturalWidth * ratio));
-        const height = Math.max(1, Math.round(image.naturalHeight * ratio));
         const canvas = document.createElement("canvas");
         const context = canvas.getContext("2d");
 
@@ -841,13 +984,28 @@ function compressImage(file) {
           return;
         }
 
-        canvas.width = width;
-        canvas.height = height;
-        context.fillStyle = "#07030d";
-        context.fillRect(0, 0, width, height);
-        context.drawImage(image, 0, 0, width, height);
+        let ratio = Math.min(1, MAX_IMAGE_SIZE / Math.max(image.naturalWidth, image.naturalHeight));
+        let quality = IMAGE_QUALITY;
+        let imageData = "";
 
-        resolve(canvas.toDataURL("image/jpeg", IMAGE_QUALITY));
+        for (let attempt = 0; attempt < 6; attempt += 1) {
+          const width = Math.max(1, Math.round(image.naturalWidth * ratio));
+          const height = Math.max(1, Math.round(image.naturalHeight * ratio));
+
+          canvas.width = width;
+          canvas.height = height;
+          context.fillStyle = "#07030d";
+          context.fillRect(0, 0, width, height);
+          context.drawImage(image, 0, 0, width, height);
+
+          imageData = canvas.toDataURL("image/jpeg", quality);
+          if (imageData.length <= MAX_IMAGE_DATA_LENGTH) break;
+
+          ratio *= 0.86;
+          quality = Math.max(0.68, quality - 0.06);
+        }
+
+        resolve(imageData);
       });
 
       image.src = reader.result;
@@ -903,6 +1061,15 @@ function nextFrame() {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
+function waitForFonts() {
+  if (!document.fonts?.ready) return Promise.resolve();
+  return withTimeout(document.fonts.ready.catch(() => undefined), 1400);
+}
+
+function withTimeout(promise, delay) {
+  return Promise.race([promise, new Promise((resolve) => setTimeout(resolve, delay))]);
+}
+
 function waitForImages(root) {
   const images = [...root.querySelectorAll("img")];
   return Promise.all(
@@ -916,6 +1083,34 @@ function waitForImages(root) {
       });
     })
   );
+}
+
+function fitPreviewText(root) {
+  const rules = [
+    { selector: ".preview-game h3", min: 18 },
+    { selector: ".preview-game p", min: 12 },
+    { selector: ".preview-hour strong", min: 24 },
+    { selector: ".preview-hour small", min: 10 },
+  ];
+
+  rules.forEach(({ selector, min }) => {
+    root.querySelectorAll(selector).forEach((node) => fitTextNode(node, min));
+  });
+}
+
+function fitTextNode(node, minFontSize) {
+  const style = getComputedStyle(node);
+  let fontSize = Number.parseFloat(style.fontSize);
+  if (!Number.isFinite(fontSize)) return;
+
+  while (fontSize > minFontSize && isTextOverflowing(node)) {
+    fontSize -= 1;
+    node.style.fontSize = `${fontSize}px`;
+  }
+}
+
+function isTextOverflowing(node) {
+  return node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1;
 }
 
 function escapeHtml(value) {
